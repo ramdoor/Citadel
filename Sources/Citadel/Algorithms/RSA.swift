@@ -13,6 +13,8 @@ extension Insecure {
 extension Insecure.RSA {
     public final class PublicKey: NIOSSHPublicKeyProtocol {
         public static let publicKeyPrefix = "rsa-sha2-256"
+        // RFC 8332: el blob de clave pública conserva el nombre ssh-rsa.
+        public static let publicKeyPrefixAliases = ["ssh-rsa"]
         public static let keyExchangeAlgorithms = ["diffie-hellman-group1-sha1", "diffie-hellman-group14-sha1"]
         
         // PublicExponent e
@@ -73,18 +75,22 @@ extension Insecure.RSA {
                 return false
             }
             
-            var clientSignature = [UInt8](repeating: 0, count: 32)
             let digest = Array(digest)
-            CCryptoBoringSSL_SHA256(digest, digest.count, &clientSignature)
-            
             let signature = Array(signature.rawRepresentation)
+
+            // rsa-sha2-256 (RFC 8332); si falla, retrocede a ssh-rsa (SHA-1)
+            // para host keys de servidores antiguos.
+            var sha256Hash = [UInt8](repeating: 0, count: 32)
+            CCryptoBoringSSL_SHA256(digest, digest.count, &sha256Hash)
+            if CCryptoBoringSSL_RSA_verify(
+                NID_sha256, sha256Hash, 32, signature, signature.count, context
+            ) == 1 {
+                return true
+            }
+            var sha1Hash = [UInt8](repeating: 0, count: 20)
+            CCryptoBoringSSL_SHA1(digest, digest.count, &sha1Hash)
             return CCryptoBoringSSL_RSA_verify(
-                NID_sha256,
-                clientSignature,
-                32,
-                signature,
-                signature.count,
-                context
+                NID_sha1, sha1Hash, 20, signature, signature.count, context
             ) == 1
         }
         
@@ -139,6 +145,8 @@ extension Insecure.RSA {
     
     public struct Signature: ContiguousBytes, NIOSSHSignatureProtocol {
         public static let signaturePrefix = "rsa-sha2-256"
+        // Servidores antiguos siguen firmando como ssh-rsa (SHA-1).
+        public static let signaturePrefixAliases = ["ssh-rsa"]
         
         public let rawRepresentation: Data
         
