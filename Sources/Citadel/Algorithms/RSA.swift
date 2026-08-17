@@ -39,9 +39,16 @@ extension Insecure.RSA {
             case invalidInitialSequence, invalidAlgorithmIdentifier, invalidSubjectPubkey, forbiddenTrailingData, invalidRSAPubkey
         }
         
-        public init(publicExponent: UnsafeMutablePointer<BIGNUM>, modulus: UnsafeMutablePointer<BIGNUM>) {
+        // Nombre de wire con el que llegó la clave (ssh-rsa o rsa-sha2-256):
+        // la re-serialización del exchange hash debe coincidir byte a byte.
+        public let wireName: String
+        public var publicKeyPrefix: String { wireName }
+
+        public init(publicExponent: UnsafeMutablePointer<BIGNUM>, modulus: UnsafeMutablePointer<BIGNUM>,
+                    wireName: String = PublicKey.publicKeyPrefix) {
             self.publicExponent = publicExponent
             self.modulus = modulus
+            self.wireName = wireName
         }
         
         public func encrypt<D: DataProtocol>(for message: D) throws -> EncryptedMessage {
@@ -115,6 +122,10 @@ extension Insecure.RSA {
         }
         
         public static func read(from buffer: inout ByteBuffer) throws -> Insecure.RSA.PublicKey {
+            try read(from: &buffer, wireName: publicKeyPrefix)
+        }
+
+        public static func read(from buffer: inout ByteBuffer, wireName: String) throws -> Insecure.RSA.PublicKey {
             guard
                 var publicExponent = buffer.readSSHBuffer(),
                 var modulus = buffer.readSSHBuffer()
@@ -126,7 +137,8 @@ extension Insecure.RSA {
             let modulusBytes = modulus.readBytes(length: modulus.readableBytes)!
             return .init(
                 publicExponent: CCryptoBoringSSL_BN_bin2bn(publicExponentBytes, publicExponentBytes.count, nil),
-                modulus: CCryptoBoringSSL_BN_bin2bn(modulusBytes, modulusBytes.count, nil)
+                modulus: CCryptoBoringSSL_BN_bin2bn(modulusBytes, modulusBytes.count, nil),
+                wireName: wireName
             )
         }
     }
