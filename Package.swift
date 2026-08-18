@@ -17,7 +17,7 @@ let package = Package(
     ],
     dependencies: [
         // .package(path: "/Users/joannisorlandos/git/joannis/swift-nio-ssh"),
-        .package(url: "https://github.com/ramdoor/swift-nio-ssh.git", branch: "rsa-sha2"),
+        .package(url: "https://github.com/ramdoor/swift-nio-ssh.git", revision: "822309b71fb5576cc01c624020deefd7b01acb1a"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.81.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
         .package(url: "https://github.com/attaswift/BigInt.git", from: "5.2.0"),
