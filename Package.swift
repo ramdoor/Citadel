@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "Citadel",
     platforms: [
-        .macOS(.v14),
+        .macOS(.v12),
         .iOS(.v17)
     ],
     products: [

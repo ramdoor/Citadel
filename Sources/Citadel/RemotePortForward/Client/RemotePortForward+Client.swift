@@ -98,7 +98,8 @@ extension SSHClient {
         do {
             try await onOpen(SSHRemotePortForward(host: host, boundPort: response.boundPort ?? port))
             while !Task.isCancelled {
-                try await Task.sleep(for: .seconds(100_000))
+                // macOS 12: Task.sleep(for:) no existe todavía.
+                try await Task.sleep(nanoseconds: 100_000 * 1_000_000_000)
             }
 
             try await sendTCPIPForwardingCancellationRequest(host: host, port: port)
@@ -198,7 +199,9 @@ extension SSHClient {
             }
 
             group.addTask {
-                await withDiscardingTaskGroup { group in
+                // withDiscardingTaskGroup requiere macOS 14; el grupo normal
+                // con Void funciona igual para este caso.
+                await withTaskGroup(of: Void.self) { group in
                     for await client in newClients {
                         group.addTask {
                             do {
