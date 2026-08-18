@@ -79,25 +79,29 @@ extension Insecure.RSA {
                 publicExponent,
                 nil
             ) == 1 else {
+                // set0_key no tomó posesión: liberar las copias.
+                CCryptoBoringSSL_BN_free(modulus)
+                CCryptoBoringSSL_BN_free(publicExponent)
                 return false
             }
             
             let digest = Array(digest)
-            let signature = Array(signature.rawRepresentation)
+            let signatureBytes = Array(signature.rawRepresentation)
 
-            // rsa-sha2-256 (RFC 8332); si falla, retrocede a ssh-rsa (SHA-1)
-            // para host keys de servidores antiguos.
+            // RFC 8332: el hash lo determina el nombre declarado en el blob de
+            // firma — rsa-sha2-256 → SHA-256, ssh-rsa → SHA-1. Sin fallback:
+            // una firma etiquetada SHA-256 jamás se acepta como SHA-1.
+            if signature.wireName == "ssh-rsa" {
+                var sha1Hash = [UInt8](repeating: 0, count: 20)
+                CCryptoBoringSSL_SHA1(digest, digest.count, &sha1Hash)
+                return CCryptoBoringSSL_RSA_verify(
+                    NID_sha1, sha1Hash, 20, signatureBytes, signatureBytes.count, context
+                ) == 1
+            }
             var sha256Hash = [UInt8](repeating: 0, count: 32)
             CCryptoBoringSSL_SHA256(digest, digest.count, &sha256Hash)
-            if CCryptoBoringSSL_RSA_verify(
-                NID_sha256, sha256Hash, 32, signature, signature.count, context
-            ) == 1 {
-                return true
-            }
-            var sha1Hash = [UInt8](repeating: 0, count: 20)
-            CCryptoBoringSSL_SHA1(digest, digest.count, &sha1Hash)
             return CCryptoBoringSSL_RSA_verify(
-                NID_sha1, sha1Hash, 20, signature, signature.count, context
+                NID_sha256, sha256Hash, 32, signatureBytes, signatureBytes.count, context
             ) == 1
         }
         
@@ -161,9 +165,13 @@ extension Insecure.RSA {
         public static let signaturePrefixAliases = ["ssh-rsa"]
         
         public let rawRepresentation: Data
+        // Nombre declarado en el blob de firma: determina el hash de la
+        // verificación (RFC 8332). Las firmas propias son siempre SHA-256.
+        public let wireName: String
         
-        public init<D>(rawRepresentation: D) where D : DataProtocol {
+        public init<D>(rawRepresentation: D, wireName: String = Signature.signaturePrefix) where D : DataProtocol {
             self.rawRepresentation = Data(rawRepresentation)
+            self.wireName = wireName
         }
         
         public func withUnsafeBytes<R>(_ body: (UnsafeRawBufferPointer) throws -> R) rethrows -> R {
@@ -176,11 +184,16 @@ extension Insecure.RSA {
         }
         
         public static func read(from buffer: inout ByteBuffer) throws -> Signature {
+            try read(from: &buffer, wireName: signaturePrefix)
+        }
+
+        public static func read(from buffer: inout ByteBuffer, wireName: String) throws -> Signature {
             guard let buffer = buffer.readSSHBuffer() else {
                 throw RSAError(message: "Invalid signature format")
             }
             
-            return Signature(rawRepresentation: buffer.getData(at: 0, length: buffer.readableBytes)!)
+            return Signature(rawRepresentation: buffer.getData(at: 0, length: buffer.readableBytes)!,
+                             wireName: wireName)
         }
     }
     
@@ -247,6 +260,9 @@ extension Insecure.RSA {
                 publicExponent,
                 privateExponent
             ) == 1 else {
+                CCryptoBoringSSL_BN_free(modulus)
+                CCryptoBoringSSL_BN_free(publicExponent)
+                CCryptoBoringSSL_BN_free(privateExponent)
                 throw CitadelError.signingError
             }
             
